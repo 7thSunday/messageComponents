@@ -26,24 +26,35 @@ import qs from 'qs';
 
 // axios 配置
 axios.defaults.timeout = 10000000;
-axios.defaults.headers.post['Content-Type'] =
-  'application/x-www-form-urlencoded;charset=UTF-8';
-
+axios.defaults.transformRequest = [(data,config)=>{
+  if(!config['Content-Type']) return qs.stringify(data);
+  switch(config['Content-Type'].toLowerCase()) {
+  case 'application/json;charset=utf-8': {
+    return JSON.stringify(data);
+  }
+  case 'multipart/form-data;charset=utf-8': {
+    return data;
+  }
+  default: {
+    return qs.stringify(data);
+  }
+  }
+}]
 /**
  * 请求之前可以做什么
  */
-axios.interceptors.request.use(
-  config => {
-    //post请求序列化
-    if (config.method === 'post') {
-      config.data = qs.stringify(config.data);
-    }
-    return config; //添加这一行
-  },
-  error => {
-    return Promise.reject(error);
-  }
-);
+// axios.interceptors.request.use(
+//   config => {
+//     //post请求序列化
+//     if (config.method === 'post') {
+//       config.data = qs.stringify(config.data);
+//     }
+//     return config; //添加这一行
+//   },
+//   error => {
+//     return Promise.reject(error);
+//   }
+// );
 
 /**
  * 返回拦截，可以做些什么
@@ -112,3 +123,11 @@ export const openWS = option => {
     }
   };
 };
+export const getFormData = param => {
+  let data = new FormData();
+  if(!param) return data;
+  for(let key in param) {
+    data.append(key,param[key]);
+  }
+  return data;
+}

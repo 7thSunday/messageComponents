@@ -1,23 +1,23 @@
 <template>
   <div class="index flex flex-col" style="height: 100vh">
     <!-- 集成 开始 -->
-    <!-- <div style="margin-bottom: 50px;">
+    <div style="margin-bottom: 50px;">
       <p>集成</p>
       <sg-button @click="showMsgPanel=true">打开消息提醒面板</sg-button>
       <message-panel :visible.sync="showMsgPanel" MsgBus="index" @on-item-click="handleClickMsg"></message-panel>
       <sg-button @click="showChat=!showChat">打开聊天窗口</sg-button>
       <chat-window :visible.sync="showChat" :currentUser="cu" MsgBus="index"></chat-window>
-    </div>-->
+    </div>
     <!-- 集成 结束 -->
 
     <!-- 独立 开始 -->
-    <div>
+    <!-- <div>
       <p>独立</p>
       <sg-button @click="showMsgPanel1=true">打开消息提醒面板</sg-button>
       <message-panel :visible.sync="showMsgPanel1" @on-item-click="handleClickMsg"></message-panel>
       <sg-button @click="showChat1=!showChat1">打开聊天窗口</sg-button>
-      <!-- <chat-window :visible.sync="showChat1" :currentUser="cu"></chat-window> -->
-    </div>
+      <chat-window :visible.sync="showChat1" :currentUser="cu"></chat-window>
+    </div>-->
     <!-- 独立 结束 -->
   </div>
 </template>
@@ -32,7 +32,7 @@ export default {
     MessagePanel,
     ChatWindow
   },
-  // mixins: [messageBus],
+  mixins: [messageBus],
   data() {
     return {
       showMsgPanel: false,

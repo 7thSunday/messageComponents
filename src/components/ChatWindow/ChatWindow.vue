@@ -233,7 +233,7 @@
                             style="margin-right:10px;"
                           >文件： {{getFileName(msg.attachPath||msg.attachPaths[0])}}</span>
                           <span v-if="showProgress(msg)">{{getProgress(msg.progress)}}</span>
-                          <span v-else-if="!msg.senderId||msg.senderId==currentUserId">已发送</span>
+                          <!-- <span v-else-if="!msg.senderId||msg.senderId==currentUserId">已发送</span> -->
                           <span v-else class="download" @click="handleClickDownload(msg)">下载</span>
                           <!-- <a v-else target="_blank" :href="fixBrackets(msg.attachPath||msg.attachPaths[0])" :download="getFileName(msg.attachPath||msg.attachPaths[0])">
                             {{!msg.senderId||msg.senderId==currentUserId?'已发送':'下载'}}
@@ -499,7 +499,7 @@
 import infoCard from './infoCard';
 import emoji from './emoji';
 import emitter from '@/mixins/emitter.js';
-import { $http, openWS } from '@/util/msgUtil.js';
+import { $http, openWS, getFormData } from '@/util/msgUtil.js';
 export default {
   name: 'ChatWindow',
   components: {
@@ -508,7 +508,11 @@ export default {
   },
   mixins: [emitter],
   props: {
-    visible: false, // 聊天窗口显隐
+    visible: {
+      // 聊天窗口显隐
+      type: Boolean,
+      default: false
+    },
     apiConfig: {
       // 接口配置
       type: Object,
@@ -581,7 +585,7 @@ export default {
       handler(val) {
         if (val) {
           // 翻页提示显示2.5秒后关闭
-          setTimeout(_ => {
+          setTimeout(() => {
             this.showToaste = false;
           }, 2500);
         }
@@ -617,7 +621,8 @@ export default {
       contactSearchTxt: '', // 组织项搜索过滤条件
       mouseoverTarget: '', // DomReact对象json字符串，用于给卡片计算位置
       showEmoji: false, // 是否显示表情
-      lastRange: null // 保存光标
+      lastRange: null, // 保存光标
+      uploadHeaders: { 'Content-Type': 'multipart/form-data;charset=utf-8' }
     };
   },
   computed: {
@@ -767,48 +772,38 @@ export default {
         fsendTime: this.myDate(),
         groupKey: ''
       };
-      let xhr = new XMLHttpRequest();
-      xhr.onload = () => {
-        if (xhr.status == 200) {
-          let res = JSON.parse(xhr.responseText);
-          if (res.flag) {
-            msgItem.attachPath = res.filePath;
-            let param = new FormData();
-            param.append('macroPath', msgItem.attachPath);
-            let xhr2 = new XMLHttpRequest();
-            xhr2.open('post', this.apiConfig.loadFile);
-            xhr2.responseType = 'blob';
-            xhr2.send(param);
-            xhr2.onload = () => {
-              if (xhr2.status == 200) {
-                let blob = new Blob([xhr2.response]);
-                let src = URL.createObjectURL(blob);
-                this.$set(msgItem, 'imgBlob', src);
-              }
-            };
-          }
-        } else {
-          msgItem.progress = '发送失败';
-          this.$message({
-            type: 'error',
-            message: res.errorMessage
-          });
+      let data = getFormData(msgItem);
+      data.append('file', file);
+      $http.post(this.apiConfig.sendFile, data, {
+        headers: this.uploadHeaders,
+        onUploadProgress: e=>{
+          msgItem.progress = Math.floor(e.loaded / e.total * 100);
         }
-      };
-      xhr.onerror = err => {
+      }).then(res=>{
+        if (res.flag) {
+          msgItem.attachPath = res.filePath;
+          if(this.isImage(res.filePath)) {
+            let param = {
+              macroPath: msgItem.attachPath
+            }
+            $http.post(this.apiConfig.loadFile, param, {
+              responseType: 'blob'
+            }).then(res=>{
+              let blob = new Blob([res]);
+              let src = URL.createObjectURL(blob);
+              this.$set(msgItem, 'imgBlob', src);
+            }).catch(err=>{
+              console.log(err)
+            })
+          }
+        }
+      }).catch(()=>{
         msgItem.progress = '发送失败';
         this.$message({
           type: 'error',
-          message: '发送失败。'
+          message: '发送失败'
         });
-      };
-      xhr.upload.onprogress = e => {
-        msgItem.progress = Math.floor((e.loaded / e.total) * 100);
-      };
-      xhr.open('POST', this.apiConfig.sendFile);
-      let data = this.$parent.getFormData(msgItem);
-      data.append('file', file);
-      xhr.send(data);
+      });
       msgItem.attachPath = file.name.split('.')[0];
       msgItem.progress = 0;
       this.currentChatPartner.chatHistory.unshift(msgItem);
@@ -895,42 +890,40 @@ export default {
               url = item.attachPaths[0];
             }
             if (url && this.isImage(url)) {
-              let param = new FormData();
-              param.append('macroPath', url);
-              let xhr2 = new XMLHttpRequest();
-              xhr2.open('post', this.apiConfig.loadFile);
-              xhr2.responseType = 'blob';
-              xhr2.send(param);
-              xhr2.onload = () => {
-                if (xhr2.status == 200) {
-                  let blob = new Blob([xhr2.response]);
-                  let src = URL.createObjectURL(blob);
-                  this.$set(item, 'imgBlob', src);
-                }
-              };
+              let param = {
+                macroPath: url
+              }
+              $http.post(this.apiConfig.loadFile, param, {
+                responseType: 'blob'
+              }).then(res=>{
+                let blob = new Blob([res]);
+                let src = URL.createObjectURL(blob);
+                this.$set(item, 'imgBlob', src);
+              }).catch(err=>{
+                console.log(err)
+              });
             }
             this.currentChatPartner.chatHistory.push(item);
           }
         } else {
           for (let i = currentCount % 10; i < msg.length; i++) {
-            let url = item.attachPath || null;
-            if (item.attachPaths && item.attachPaths[0]) {
-              url = item.attachPaths[0];
+            let url = msg[i].attachPath || null;
+            if (msg[i].attachPaths && msg[i].attachPaths[0]) {
+              url = msg[i].attachPaths[0];
             }
             if (url && this.isImage(url)) {
-              let param = new FormData();
-              param.append('macroPath', url);
-              let xhr2 = new XMLHttpRequest();
-              xhr2.open('post', this.apiConfig.loadFile);
-              xhr2.responseType = 'blob';
-              xhr2.send(param);
-              xhr2.onload = () => {
-                if (xhr2.status == 200) {
-                  let blob = new Blob([xhr2.response]);
-                  let src = URL.createObjectURL(blob);
-                  this.$set(msg[i], 'imgBlob', src);
-                }
-              };
+              let param = {
+                macroPath: url
+              }
+              $http.post(this.apiConfig.loadFile, param, {
+                responseType: 'blob'
+              }).then(res=>{
+                let blob = new Blob([res]);
+                let src = URL.createObjectURL(blob);
+                this.$set(msg[i], 'imgBlob', src);
+              }).catch(err=>{
+                console.log(err)
+              });
             }
             this.currentChatPartner.chatHistory.push(msg[i]);
           }
@@ -950,19 +943,18 @@ export default {
             url = msgItem.attachPaths[0];
           }
           if (url && this.isImage(url)) {
-            let param = new FormData();
-            param.append('macroPath', url);
-            let xhr2 = new XMLHttpRequest();
-            xhr2.open('post', this.apiConfig.loadFile);
-            xhr2.responseType = 'blob';
-            xhr2.send(param);
-            xhr2.onload = () => {
-              if (xhr2.status == 200) {
-                let blob = new Blob([xhr2.response]);
-                let src = URL.createObjectURL(blob);
-                this.$set(msgItem, 'imgBlob', src);
-              }
-            };
+            let param = {
+              macroPath: url
+            }
+            $http.post(this.apiConfig.loadFile, param, {
+              responseType: 'blob'
+            }).then(res=>{
+              let blob = new Blob([res]);
+              let src = URL.createObjectURL(blob);
+              this.$set(msgItem, 'imgBlob', src);
+            }).catch(err=>{
+              console.log(err)
+            });
           }
           let i = 0;
           for (; i < this.chatList.length; i++) {
@@ -1074,7 +1066,6 @@ export default {
         var reader = new FileReader();
         reader.onloadend = function(event) {
           var imgBase64 = event.target.result; //    event.target.result.split(",")  [0]=data:image/png;base64  [1]=data
-          var dataURI = imgBase64;
           document.execCommand('insertImage', false, imgBase64);
         };
         reader.readAsDataURL(blob);
@@ -1098,33 +1089,32 @@ export default {
           msg.attachPath || msg.attachPaths[0]
         );
       url = url.replace(downloadFileName, this.fixBrackets(downloadFileName));
-      let param = new FormData();
-      param.append('macroPath', url);
-      var xhr = new XMLHttpRequest();
-      xhr.open('post', this.apiConfig.loadFile);
-      xhr.responseType = 'blob';
-      xhr.onload = function() {
-        if (xhr.status == 200) {
-          let blob = new Blob([xhr.response]);
-          if (window.navigator.msSaveBlob) {
-            try {
-              window.navigator.msSaveOrOpenBlob(blob, downloadFileName);
-            } catch (e) {
-              console.log(e);
-            }
-            return;
-          } else {
-            let ele = document.createElement('a');
-            ele.download = downloadFileName;
-            ele.href = URL.createObjectURL(blob);
-            ele.style.display = 'none';
-            document.body.appendChild(ele);
-            ele.click();
-            ele.remove();
+      let param = {
+        macroPath: url
+      }
+      $http.post(this.apiConfig.loadFile, param, {
+        responseType: 'blob'
+      }).then(res=>{
+        let blob = new Blob([res]);
+        if (window.navigator.msSaveBlob) {
+          try {
+            window.navigator.msSaveOrOpenBlob(blob, downloadFileName);
+          } catch (e) {
+            console.log(e);
           }
+          return;
+        } else {
+          let ele = document.createElement('a');
+          ele.download = downloadFileName;
+          ele.href = URL.createObjectURL(blob);
+          ele.style.display = 'none';
+          document.body.appendChild(ele);
+          ele.click();
+          ele.remove();
         }
-      };
-      xhr.send(param);
+      }).catch(err=>{
+        console.log(err)
+      });
     },
     /**
      * @description 记录光标的位置，和插入表情配合使用
@@ -1201,19 +1191,18 @@ export default {
             url = item.attachPaths[0];
           }
           if (url && this.isImage(url)) {
-            let param = new FormData();
-            param.append('macroPath', url);
-            let xhr2 = new XMLHttpRequest();
-            xhr2.open('post', this.apiConfig.loadFile);
-            xhr2.responseType = 'blob';
-            xhr2.send(param);
-            xhr2.onload = () => {
-              if (xhr2.status == 200) {
-                let blob = new Blob([xhr2.response]);
-                let src = URL.createObjectURL(blob);
-                this.$set(item, 'imgBlob', src);
-              }
-            };
+            let param = {
+              macroPath:url
+            }
+            $http.post(this.apiConfig.loadFile, param, {
+              responseType: 'blob'
+            }).then(res=>{
+              let blob = new Blob([res]);
+              let src = URL.createObjectURL(blob);
+              this.$set(item, 'imgBlob', src);
+            }).catch(err=>{
+              console.log(err)
+            });
           }
         }
         this.$set(partner, 'chatHistory', res.rows); // 聊天记录
@@ -1237,6 +1226,7 @@ export default {
      * @description 用户列表树渲染函数
      */
     renderUserList(h, { root, node, data }) {
+      console.log(root,node)
       let that = this,
         timer = null;
       return h(
@@ -1283,7 +1273,7 @@ export default {
     getMsgContentRenderEmoji(content, showTxt = false) {
       if (!content) return;
       let arr = [],
-        patt = /\#\^\w+\^\#/g,
+        patt = /#\^\w+\^#/g,
         result;
       result = content.match(patt);
       if (result != '' && result != null) {
@@ -1293,15 +1283,8 @@ export default {
           arr.push({ imgSrc: result[i], code: parseInt(code[0]) });
         }
         for (let i = 0; i < arr.length; i++) {
-          content = showTxt
-            ? content.replace(
-                arr[i].imgSrc,
-                this.$refs.emojiPicker.faces[arr[i].code].title
-              )
-            : content.replace(
-                arr[i].imgSrc,
-                `<img style="height:22px;" src="${this.$refs.emojiPicker.faceSrc}${this.$refs.emojiPicker.faces[arr[i].code].img}">`
-              );
+          content = showTxt? content.replace(arr[i].imgSrc,this.$refs.emojiPicker.faces[arr[i].code].title)
+            : content.replace(arr[i].imgSrc,`<img style="height:22px;" src="${this.$refs.emojiPicker.faceSrc}${this.$refs.emojiPicker.faces[arr[i].code].img}">`);
         }
       }
       content = showTxt
@@ -1318,12 +1301,12 @@ export default {
       if (!content) return;
       let arr = [],
         // patt = /<img\b.*?(?:\>|\/>)/gi,
-        patt = /<img\b[^<>]*(\/public\/images\/face\/\d+)+.*?(?:\>|\/\>)+?/gi,
+        patt = /<img\b[^<>]*(\/public\/images\/face\/\d+)+.*?(?:>|\/>)+?/gi,
         result;
       result = content.match(patt);
       if (result != '' && result != null) {
         for (let i = 0; i < result.length; i++) {
-          let path = result[i].match(/\bsrc\b\s*=\s*[\'\"]?([^\'\"]*)[\'\"]?/i);
+          let path = result[i].match(/\bsrc\b\s*=\s*['"]?([^'"]*)['"]?/i);
           let code = path[1]
             .split('/')
             .pop()
@@ -1461,11 +1444,11 @@ export default {
           }
           this.historyMap = temp;
           this.historyStatus.total = res.total;
-          this.$nextTick(_ => {
+          this.$nextTick(() => {
             this.$refs.historyBody.scrollTop = 10000;
           });
         })
-        .catch(err => {
+        .catch(() => {
           this.toasteTxt = '加载失败';
           this.showToaste = true;
         });
@@ -1522,9 +1505,9 @@ export default {
      * @returns {Any} 文件的发送进度
      */
     showProgress(msg) {
-      if (msg.hasOwnProperty('progress')) {
+      if (Object.prototype.hasOwnProperty.call(msg, 'progress')) {
         return (
-          (msg.progress >= 0 && msg.progress < 100) ||
+          msg.progress >= 0 && msg.progress < 100 ||
           msg.progress == '发送失败'
         );
       }
@@ -1625,7 +1608,7 @@ export default {
      */
     splitByImg(content) {
       if (!content) return;
-      let patt = /<img\b.*?(?:\>|\/>)/gi,
+      let patt = /<img\b.*?(?:>|\/>)/gi,
         result;
       result = content.match(patt);
       if (result != '' && result != null) {
@@ -1640,7 +1623,7 @@ export default {
           if (result.length > 0) {
             fileData = result
               .shift()
-              .match(/\bsrc\b\s*=\s*[\'\"]?([^\'\"]*)[\'\"]?/i)[1];
+              .match(/\bsrc\b\s*=\s*['"]?([^'"]*)['"]?/i)[1];
             splitedContent.push(this.dataURLtoFile(fileData));
           }
           j++;
@@ -1650,7 +1633,7 @@ export default {
           if (result.length > 0) {
             fileData = result
               .shift()
-              .match(/\bsrc\b\s*=\s*[\'\"]?([^\'\"]*)[\'\"]?/i)[1];
+              .match(/\bsrc\b\s*=\s*['"]?([^'"]*)['"]?/i)[1];
             splitedContent.push(this.dataURLtoFile(fileData));
           }
         }
@@ -1803,19 +1786,13 @@ export default {
         type: 12
       };
       $http
-        .post(this.apiConfig.markAsReaded, para)
-        .then(sss => {
-          // console.log(res);
-        })
-        .catch(err => {
-          // console.log(err);
-        });
+        .post(this.apiConfig.markAsReaded, para);
     }
   },
   mounted() {
     this.loadAllUsers();
     this.handleClickNav(0);
-    this.$refs.cover.addEventListener('mouseup', _ => {
+    this.$refs.cover.addEventListener('mouseup', () => {
       this.showEmoji = false;
     });
     if (this.MsgBus) {

@@ -72,7 +72,10 @@ export default {
   name: 'MessagePanel',
   mixins: [emitter],
   props: {
-    visible: false, // 消息面板显隐
+    visible: {// 消息面板显隐
+      type: Boolean,
+      default: false
+    }, 
     MsgBus: {
       // 总线组件名
       type: String,
@@ -320,7 +323,6 @@ export default {
         store: list,
         total: list.length + rows.length
       };
-      let target = null;
       this.$set(this.dataProps[index], 'data', dataObj);
     },
     /**
@@ -409,6 +411,7 @@ export default {
      * @param {Object} data 消息对象
      */
     handleClickMark(pageIndex, data) {
+      this.$emit('on-item-mark', this.dataProps[pageIndex], data);
       this._markMsgReaded([data.rid]);
       let list = this.dataProps[pageIndex].data.rows;
       for (let i = 0; i < list.length; i++) {
@@ -430,13 +433,7 @@ export default {
         type: 12
       };
       $http
-        .post(this.apiConfig.markAsReaded, para)
-        .then(res => {
-          // console.log(res);
-        })
-        .catch(err => {
-          // console.log(err);
-        });
+        .post(this.apiConfig.markAsReaded, para);
     },
     /**
      * @description 弹出提醒
@@ -460,11 +457,7 @@ export default {
         this.$notice.open({
           type: 'info',
           name: msg.rid,
-          title: msg.senderName
-            ? msg.senderName
-            : '' + '    ' + msg.title
-            ? msg.title
-            : '',
+          title: msg.senderName? msg.senderName: '' + '    ' + msg.title? msg.title: '',
           desc: '辅助描述内容',
           duration: msg.msign == 910 || msg.msign == 911 ? 0 : 3,
           onClose: () => {
@@ -500,7 +493,7 @@ export default {
     _renderTextEmoji(content) {
       if (!content) return;
       let arr = [],
-        patt = /\#\^\w+\^\#/g,
+        patt = /#\^\w+\^#/g,
         result;
       result = content.match(patt);
       if (result != '' && result != null) {

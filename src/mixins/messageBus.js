@@ -32,7 +32,7 @@ export default {
      */
     openWebSocket() {
       this.ws = new WebSocket(this.wsUrl);
-      this.ws.onerror = err => {
+      this.ws.onerror = () => {
         this.$msg.show({
           type: 'error',
           content: 'websocket已断开连接'

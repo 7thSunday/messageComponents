@@ -77,8 +77,14 @@ export default {
         return null;
       }
     },
-    target: '',
-    visible: false
+    target: {
+      type: String,
+      default: ''
+    },
+    visible: {
+      type: Boolean,
+      default: false
+    }
   },
   data() {
     return {
